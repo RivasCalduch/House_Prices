@@ -1,0 +1,2306 @@
+---
+title: "Kaggle_House_Price_Analysis_V0_3"
+author: "Jose Luis Rivas Calduch"
+date: "2 de agosto de 2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+#Cargamos las diferentes librerias a emplear
+
+#Lectura del fichero csv
+library(readr)
+
+# Manejo de data frames
+library(tidyverse)
+
+#Fusion de graficos
+library(gridExtra)
+
+#Graficos
+library(ggplot2)
+
+```
+
+
+```{r}
+
+#Lectura de data frame de entrenamiento
+rawTrain <- read_csv("train.csv")
+
+```
+
+```{r}
+
+# Funcion para remplazar outliers
+replace_outliers <- function(x, removeNA = TRUE){
+  qrts <- quantile(x, probs = c(0.25, 0.75), na.rm = removeNA)
+  caps <- quantile(x, probs = c(.05, .95), na.rm = removeNA)
+  iqr <- qrts[2]-qrts[1]
+  h <- 1.5 * iqr
+  x[x<qrts[1]-h] <- qrts[1]-h
+  x[x>qrts[2]+h] <- qrts[2]+h
+  x
+}
+
+```
+
+```{r}
+
+#Resumen del set de datos
+
+glimpse(rawTrain)
+
+```
+
+### Análisis de valores nulos o ausentes:
+
+Identificamos si existen datos ausentes/nulos.
+```{r}
+#Calculamos el numero de valores ausentes
+
+map_dbl(rawTrain, .f = function(x){sum(is.na(x))})
+
+```
+
+```{r}
+
+#Calculamos el porcentaje de valores ausentes sobre el total de valores
+
+map_dbl(rawTrain, .f = function(x){(sum(is.na(x))/nrow(rawTrain))*100})
+
+```
+
+```{r}
+
+#Identificamos valores vacios
+
+colSums(rawTrain=="")
+
+```
+
+```{r}
+#Identificamos valores que puedan ser cero
+
+colSums(rawTrain==0)
+
+```
+
+### Análisis de la variable dependiente (Sale price)
+
+
+```{r}
+# Analizamos las medias de tendencia central del nuevo atributo
+
+summary(rawTrain$SalePrice)
+
+```
+
+```{r}
+
+boxplot(rawTrain$SalePrice)
+
+```
+
+```{r}
+
+# Analisis de la distribuccion de las variables
+
+hist(rawTrain$SalePrice, breaks = 50)
+
+```
+
+Se observa que la distribución es asimétrica y difiere de una normal.
+
+```{r}
+
+hist(rawTrain$SalePrice,freq=FALSE,col="lightcyan", main="Histograma de la variable", xlab="", ylab="Densidad") 
+curve(dnorm(x,mean=mean(rawTrain$SalePrice),sd=sd(rawTrain$SalePrice)), from=0, to=1000000, add=TRUE, col="blue")
+legend("topleft",col=c("blue"),legend =c("Densidad normal estimada"),lwd=2, bty = "n")
+
+```
+
+Dado que el precio unitario de la vivienda se ve influenciado por la superficie de esta se decide analizar también la distribución del valor por superficie.
+
+```{r}
+
+# Creamos un nuevo atributo con el valor medio del precio de la vivienda por superficie
+
+rawTrain$averagePrice_surface <- (rawTrain$SalePrice / rawTrain$GrLivArea)
+
+# Analizamos las medias de tendencia central del nuevo atributo
+
+summary(rawTrain$averagePrice_surface)
+
+
+```
+
+```{r}
+
+# Analizamos la distribuccion de frecuencias del valor medio
+
+boxplot(rawTrain$averagePrice_surface)
+
+```
+
+```{r}
+
+# Analizamos la distribuccion de frecuencias del valor medio
+
+hist(rawTrain$averagePrice_surface, breaks = 50)
+
+```
+
+Se observa que la distribución del valor por superficie se asemeja más a una distribución normal.
+
+```{r}
+
+hist(rawTrain$averagePrice_surface,freq=FALSE,col="lightcyan", main="Histograma de la variable", xlab="", ylab="Densidad") 
+curve(dnorm(x,mean=mean(rawTrain$averagePrice_surface),sd=sd(rawTrain$averagePrice_surface)), from=0, to=250, add=TRUE, col="blue")
+legend("topleft",col=c("blue"),legend =c("Densidad normal estimada"),lwd=2, bty = "n")
+
+```
+
+```{r}
+#Vamos a eliminar los outlier (preprocesado)
+
+rawTrain$averagePrice_surface <- replace_outliers(rawTrain$averagePrice_surface)
+
+boxplot(rawTrain$averagePrice_surface)
+
+```
+
+```{r}
+# Analizamos las medias de tendencia central del nuevo atributo
+
+summary(rawTrain$averagePrice_surface)
+
+```
+
+
+```{r}
+
+# Vamos a tramear la varible para el estudio de las variables cuantitativas
+
+rawTrain$bucket_Price <- if_else(rawTrain$averagePrice_surface > 138.70, "Hight", if_else(rawTrain$averagePrice_surface > 99.82, "Average","Low"))
+
+```
+
+### Análisis de las variable independientes
+
+#### MSSubClass
+
+```{r}
+
+tabla <- table(rawTrain$MSSubClass)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+rawTrain$MSSubClass <- as.factor(rawTrain$MSSubClass)
+
+ggplot(data = rawTrain, aes(x = MSSubClass, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "MSSubClass") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+
+#Distribuccion de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$MSSubClass,main='MSSubClass vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie. Aunque existen niveles muy poco representativos que vamos a agrupar.
+
+```{r}
+
+rawTrain$MSSubClass <- as.character(rawTrain$MSSubClass)
+
+rawTrain$MSSubClass_agrup <- if_else(rawTrain$MSSubClass == "40" | rawTrain$MSSubClass == "45" | rawTrain$MSSubClass == "40" | rawTrain$MSSubClass == "75" | rawTrain$MSSubClass == "85" | rawTrain$MSSubClass == "180", "OTHERS", rawTrain$MSSubClass)
+
+tabla <- table(rawTrain$MSSubClass_agrup)
+
+tabla
+
+```
+
+#### MSZoning
+
+```{r}
+
+tabla <- table(rawTrain$MSZoning)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+ggplot(data = rawTrain, aes(x = MSZoning, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "MSZoning") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$MSZoning,main='MSZoning vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie.
+
+#### LotFrontage
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$LotFrontage~rawTrain$bucket_Price,main='LotFrontage vs Price_Surface', ol='gray')
+
+```
+
+La longitud del frente de fachada (LotFrontage) no influye en el precio medio por superficie dado que se observa que esta es similar en los tres rangos de precio.
+
+Creamos un nuevo atributo en el que analizaremos los NA, entendiendo que estas son las viviendas sin frente de fachada o interiores y observaremos si existe variabilidad.
+
+```{r}
+
+rawTrain$LotFrontage_factor <- if_else(is.na(rawTrain$LotFrontage),"No","Yes")
+
+# Diagrama de caja 
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$LotFrontage_factor,main='LotFrontage_factor vs Price_Surface', ol='gray')
+
+```
+
+Observamos que no existe variabilidad frente al valor medio por superficie y la descartamos con variable independiente.
+
+#### LotArea
+
+```{r}
+
+summary(rawTrain$LotArea)
+
+```
+
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$LotArea[rawTrain$LotArea < 20000]~rawTrain$bucket_Price[rawTrain$LotArea < 20000],main='LotArea vs Price_Surface', ol='gray')
+
+```
+
+Observamos que no existe variabilidad frente al valor medio por superficie y la descartamos con variable independiente.
+
+#### Street
+
+
+```{r}
+
+ggplot(data = rawTrain, aes(x = Street, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "Street") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+table(rawTrain$Street)
+```
+
+No existe variabilidad.
+
+```{r}
+
+#Distribuccion de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Street,main='Street vs Price_Surface', ol='gray')
+
+```
+
+Observamos que no existe variabilidad frente al valor medio por superficie y la descartamos con variable independiente.
+
+#### Alley
+
+Descartamos la variable dado el numero de observaciones vacias.
+
+#### LotShape
+
+```{r}
+
+table(rawTrain$LotShape)
+
+```
+
+```{r}
+
+ggplot(data = rawTrain, aes(x = LotShape, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "LotShape") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$LotShape,main='LotShape vs Price_Surface', ol='gray')
+
+```
+
+Se observa una leve variabilidad frente al valor por superficie. Se debe agrupar los grupos IR dado las pocas observaciones de los grupos IR2 y IR3.
+
+#### LandContour
+
+```{r}
+
+tabla <- table(rawTrain$LandContour)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+
+```{r}
+
+ggplot(data = rawTrain, aes(x = LandContour, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "LandContour") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$LandContour,main='LandContour vs Price_Surface', ol='gray')
+
+```
+
+Se observa una leve variabilidad frente al valor por superficie. Pero los grupos: Bnk, HLS y Low son muy minoritarios.
+
+#### Utilities
+
+```{r}
+
+tabla <- table(rawTrain$Utilities)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+La descartamos dado que solo existe una observación diferente al grupo mayoritario AllPub.
+
+#### LotConfig
+
+```{r}
+
+tabla <- table(rawTrain$LotConfig)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$LotConfig,main='LotConfig vs Price_Surface', ol='gray')
+
+```
+
+Se observa una leve variabilidad frente al valor por superficie. Los grupos: FR2 y FR3 son muy minoritarios y se deberian agrupar.
+
+#### LandSlope
+
+```{r}
+
+tabla <- table(rawTrain$LandSlope)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$LandSlope,main='LandSlope vs Price_Surface', ol='gray')
+
+```
+
+Se observa una leve variabilidad frente al valor por superficie. Los grupos: Mod y Sev son muy minoritarios y se deberian agrupar.
+
+#### Neighborhood
+
+```{r}
+
+tabla <- table(rawTrain$Neighborhood)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+
+```{r}
+
+ggplot(data = rawTrain, aes(x = Neighborhood, y = ..count..)) +
+  geom_bar() +
+  scale_fill_manual(values = c("gray50", "orangered2")) +
+  labs(title = "Neighborhood") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Neighborhood,main='Neighborhood vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie. Hay barrios con muy pocas observaciones y se dería hacer alguna agrupacion con los muy minoritarios.
+
+#### Condition1
+
+```{r}
+
+tabla <- table(rawTrain$Condition1)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Condition1,main='Condition1 vs Price_Surface', ol='gray')
+
+```
+
+#### Condition2
+
+```{r}
+
+tabla <- table(rawTrain$Condition2)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Condition2,main='Condition2 vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie impactando negativamente en el valor en el caso de estar no ser la condicion Norm. Pero hay niveles muy minoritarios por lo que habra que realizar agrupaciones.
+
+#### BldgType
+
+```{r}
+
+tabla <- table(rawTrain$BldgType)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BldgType,main='BldgType vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie.
+
+#### HouseStyle
+
+```{r}
+
+tabla <- table(rawTrain$HouseStyle)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$HouseStyle,main='HouseStyle vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie. Hay niveles muy minoritarios por lo que habra que realizar agrupaciones. 
+
+#### OverallQual
+
+```{r}
+
+tabla <- table(rawTrain$OverallQual)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$OverallQual,main='OverallQual vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie. Hay niveles muy minoritarios por lo que habra que realizar agrupaciones realizando grupos (alto, medio y bajo).
+
+#### OverallCond
+
+```{r}
+
+tabla <- table(rawTrain$OverallCond)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$OverallCond,main='OverallCond vs Price_Surface', ol='gray')
+
+```
+
+Observamos que existe variabilidad frente al valor medio por superficie. Hay niveles muy minoritarios por lo que habra que realizar agrupaciones realizando grupos (alto, medio y bajo).
+
+#### YearBuilt
+
+```{r}
+
+tabla <- table(rawTrain$YearBuilt)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+# Analizamos la distribuccion de frecuencias
+
+hist(rawTrain$YearBuilt, breaks = 100)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$YearBuilt,main='YearBuilt vs Price_Surface', ol='gray')
+
+```
+
+#### YearRemodAdd
+
+```{r}
+
+tabla <- table(rawTrain$YearRemodAdd)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+# Analizamos la distribuccion de frecuencias
+
+hist(rawTrain$YearRemodAdd, breaks = 100)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$YearRemodAdd,main='YearRemodAdd vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad en ambos atributos pero se debe realizar una agrupacion se puede enfocar en base a la distribucción.
+
+#### RoofStyle
+
+```{r}
+
+tabla <- table(rawTrain$RoofStyle)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$RoofStyle,main='RoofStyle vs Price_Surface', ol='gray')
+
+```
+
+Se observa una leve variabilidad frente al valor por superficie. Salvo los grupos: Gable y Hip son muy minoritarios y se deberian agrupar.
+
+#### RoofMatl
+
+```{r}
+
+tabla <- table(rawTrain$RoofMatl)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+Observamos que no existe distribucción de los factores y la descartamos con variable independiente.
+
+#### Exterior1st
+
+```{r}
+
+tabla <- table(rawTrain$Exterior1st)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Exterior1st,main='Exterior1st vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad pero se debe realizar una agrupacion en funcion del valor dado que hay clases muy poco relevantes.
+
+#### Exterior2nd
+
+```{r}
+
+tabla <- table(rawTrain$Exterior2nd)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Exterior2nd,main='Exterior2nd vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad pero se debe realizar una agrupacion en funcion del valor dado que hay clases muy poco relevantes.
+
+#### MasVnrType
+
+```{r}
+
+tabla <- table(rawTrain$MasVnrType)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$MasVnrType,main='MasVnrType vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad pero se debe realizar una agrupacion en funcion del valor dado que hay clases muy poco relevantes se podría analizar convinarla variable con las dos anteriores.
+
+#### MasVnrArea
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$MasVnrArea[rawTrain$MasVnrArea<700]~rawTrain$bucket_Price[rawTrain$MasVnrArea<700],main='MasVnrArea vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie.
+
+#### ExterQual
+
+
+```{r}
+
+tabla <- table(rawTrain$ExterQual)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$ExterQual,main='ExterQual vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie.
+
+#### ExterCond
+
+```{r}
+
+tabla <- table(rawTrain$ExterCond)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$ExterCond,main='ExterCond vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Hay que agrupar las variabñes Ex y Po.
+
+#### Foundation
+
+```{r}
+
+tabla <- table(rawTrain$Foundation)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Foundation,main='Foundation vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Hay que agrupar las variabñes Stone y Wood.
+
+#### BsmtQual
+
+```{r}
+
+tabla <- table(rawTrain$BsmtQual)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtQual,main='BsmtQual vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Exiten valores vacios que habrá que tratar.
+
+#### BsmtCond
+
+```{r}
+
+tabla <- table(rawTrain$BsmtCond)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtCond,main='BsmtCond vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Hay que agrupar las variables Po a Fa.Exiten valores vacios que habrá que tratar.
+
+#### BsmtExposure
+
+```{r}
+
+tabla <- table(rawTrain$BsmtExposure)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtExposure,main='BsmtExposure vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Exiten valores vacios que habrá que tratar.
+
+#### BsmtFinType1
+
+```{r}
+
+tabla <- table(rawTrain$BsmtFinType1)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtFinType1,main='BsmtFinType1 vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. Exiten valores vacios que habrá que tratar.
+
+#### BsmtFinSF1
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$BsmtFinSF1[rawTrain$BsmtFinSF1<1000]~rawTrain$bucket_Price[rawTrain$BsmtFinSF1<1000],main='MasVnrArea vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie. 
+
+#### BsmtFinType2
+
+```{r}
+
+tabla <- table(rawTrain$BsmtFinType2)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtFinType2,main='BsmtFinType2 vs Price_Surface', ol='gray')
+
+```
+
+Se observa una ligera variabilidad respecto al valor por superficie. Exiten valores vacios que habrá que tratar.
+
+#### BsmtFinSF2
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$BsmtFinSF2[rawTrain$BsmtFinSF2<10]~rawTrain$bucket_Price[rawTrain$BsmtFinSF2<10],main='MasVnrArea vs Price_Surface', ol='gray')
+
+```
+
+No se observa variabilidad respecto al valor por superficie. 
+
+#### BsmtUnfSF
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$BsmtUnfSF[rawTrain$BsmtUnfSF<1500]~rawTrain$bucket_Price[rawTrain$BsmtUnfSF<1500],main='MasVnrArea vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie y es inversa.
+
+
+#### TotalBsmtSF
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$TotalBsmtSF[rawTrain$TotalBsmtSF<1500]~rawTrain$bucket_Price[rawTrain$TotalBsmtSF<1500],main='MasVnrArea vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad respecto al valor por superficie.
+
+#### Heating
+
+```{r}
+
+tabla <- table(rawTrain$Heating)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+Se observa que no existe variabilidad.
+
+#### HeatingQC
+
+```{r}
+
+tabla <- table(rawTrain$HeatingQC)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$HeatingQC,main='HeatingQC vs Price_Surface', ol='gray')
+
+```
+
+Se observa que existe variabilidad. El factor Po hay que agruparlo debido a su baja variabilidad.
+
+#### CentralAir
+
+```{r}
+
+tabla <- table(rawTrain$CentralAir)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$CentralAir,main='CentralAir vs Price_Surface', ol='gray')
+
+```
+
+Se observa que existe variabilidad.
+
+#### Electrical
+
+
+```{r}
+
+tabla <- table(rawTrain$Electrical)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Electrical,main='Electrical vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad. Has que agrupar las variables Fuse y Mix dado el bajo número de observaciones.
+
+#### 1stFlrSF:
+
+```{r}
+
+summary(rawTrain$`1stFlrSF`)
+
+```
+
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$`1stFlrSF`[rawTrain$`1stFlrSF` < 3000]~rawTrain$bucket_Price[rawTrain$`1stFlrSF` < 3000],main='1stFlrSF vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=`1stFlrSF`, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=`1stFlrSF`, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Se observa variabilidad. Cuanto más superfice tiene la primera planta mayor es el precio por superficie.
+
+#### 2stFlrSF:
+
+```{r}
+
+summary(rawTrain$`2ndFlrSF`)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$`2ndFlrSF`[rawTrain$`2ndFlrSF` < 3000]~rawTrain$bucket_Price[rawTrain$`2ndFlrSF` < 3000],main='2ndFlrSF vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=`2ndFlrSF`, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=`2ndFlrSF`, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Se observa variabilidad. Las viviendas con una segunda planta se encuentran dentro del tramo bajo por lo que denota que penaliza el precio final. Analizar la posibilidad de convertir la variable en una variable cualitativa.
+
+#### LowQualFinSF:
+
+```{r}
+
+summary(rawTrain$LowQualFinSF)
+
+```
+
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$LowQualFinSF[rawTrain$LowQualFinSF < 100]~rawTrain$bucket_Price[rawTrain$LowQualFinSF < 100],main='LowQualFinSF vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=LowQualFinSF, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=LowQualFinSF, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+No se observa variabilidad. Este tipo de superficie no impacta en el precio.
+
+#### GrLivArea:
+
+```{r}
+
+summary(rawTrain$GrLivArea)
+
+```
+
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$GrLivArea[rawTrain$GrLivArea < 10000]~rawTrain$bucket_Price[rawTrain$GrLivArea < 10000],main='GrLivArea vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=GrLivArea, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=GrLivArea, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Existe variabilidad. A mayor superficie menor precio por supereficie.
+
+#### BsmtFullBath
+
+```{r}
+
+tabla <- table(rawTrain$BsmtFullBath)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtFullBath,main='BsmtFullBath vs Price_Surface', ol='gray')
+
+```
+
+#### BsmtHalfBath
+
+
+```{r}
+
+tabla <- table(rawTrain$BsmtHalfBath)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BsmtHalfBath,main='BsmtHalfBath vs Price_Surface', ol='gray')
+
+```
+
+#### FullBath
+
+
+```{r}
+
+tabla <- table(rawTrain$FullBath)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$FullBath,main='FullBath vs Price_Surface', ol='gray')
+
+```
+
+#### HalfBath
+
+
+```{r}
+
+tabla <- table(rawTrain$HalfBath)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$HalfBath,main='HalfBath vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad. Se van a sumar en una nueva variable el numero total de baños.
+
+```{r}
+
+rawTrain$totalBath <- rawTrain$FullBath + rawTrain$HalfBath
+
+```
+
+```{r}
+
+tabla <- table(rawTrain$totalBath)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$totalBath,main='totalBath vs Price_Surface', ol='gray')
+
+```
+
+No se observa variabilidad en el número total de baños.
+
+#### Bedroom
+
+```{r}
+
+tabla <- table(rawTrain$BedroomAbvGr)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$BedroomAbvGr,main='BedroomAbvGr vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad. A mayor número de habitaciones disminuye el precio por superficie de la vivienda.
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$SalePrice~rawTrain$BedroomAbvGr,main='BedroomAbvGr vs SalePrice', ol='gray')
+
+```
+
+La variabilidad no estan clara cuando relacionamos el número de habitaciones con el del precio de la vivienda.
+
+#### Kitchen
+
+```{r}
+
+tabla <- table(rawTrain$KitchenAbvGr)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$KitchenAbvGr,main='KitchenAbvGr vs Price_Surface', ol='gray')
+
+```
+
+Existe poca variabilidad.
+
+#### KitchenQual
+
+```{r}
+
+tabla <- table(rawTrain$KitchenQual)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$KitchenQual,main='KitchenQual vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad.
+
+#### TotRmsAbvGrd
+
+```{r}
+
+tabla <- table(rawTrain$TotRmsAbvGrd)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$TotRmsAbvGrd,main='TotRmsAbvGrd vs Price_Surface', ol='gray')
+
+```
+
+Existe poca variabilidad.
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$SalePrice~rawTrain$TotRmsAbvGrd,main='TotRmsAbvGrd vs SalePrice', ol='gray')
+
+```
+
+#### Functional
+
+```{r}
+
+tabla <- table(rawTrain$Functional)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Functional,main='Functional vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad. Pero hay que hacer dos grupos sobre el factor mayoritario: Typ (s/n).
+
+#### Fireplaces
+
+```{r}
+
+tabla <- table(rawTrain$Fireplaces)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Fireplaces,main='Fireplaces vs Price_Surface', ol='gray')
+
+```
+
+No se observa variabilidad.
+
+#### FireplacesQu
+
+```{r}
+
+tabla <- table(rawTrain$FireplaceQu)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$FireplaceQu,main='FireplacesQu vs Price_Surface', ol='gray')
+
+```
+
+Casi el 50% de las observaciones no estan disponibles y existe una categoría que marca que no tiene, por tanto, no parece que la observación no está disponible se deba a que no tiene.
+
+#### GarageType
+
+```{r}
+
+tabla <- table(rawTrain$GarageType)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageType,main='GarageType vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad. Hay que tratar los valores vacios (5%) convirtiendolos en NA.
+
+#### GarageYrBlt
+
+```{r}
+
+tabla <- table(rawTrain$GarageYrBlt)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageYrBlt,main='GarageYrBlt vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad. Hay que tratar los valores vacios (5%) convirtiendolos en NA.
+
+```{r}
+hist(rawTrain$GarageYrBlt, breaks = 100)
+```
+
+#### GarageFinish
+
+```{r}
+
+tabla <- table(rawTrain$GarageFinish)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageFinish,main='GarageFinish vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad. Hay que tratar los valores vacios (5%) convirtiendolos en NA.
+
+#### GarageCars
+
+```{r}
+
+tabla <- table(rawTrain$GarageCars)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageCars,main='GarageCars vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad. Hay que tratar los valores vacios (5%) convirtiendolos en NA y hay que realizar agregaciones.
+
+#### GarageArea:
+
+```{r}
+
+summary(rawTrain$GarageArea)
+
+```
+
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$GarageArea[rawTrain$GarageArea < 10000]~rawTrain$bucket_Price[rawTrain$GarageArea < 10000],main='GarageArea vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=GarageArea, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=GarageArea, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Existe variabilidad.
+
+#### GarageQual
+
+```{r}
+
+tabla <- table(rawTrain$GarageQual)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageQual,main='GarageCars vs Price_Surface', ol='gray')
+
+```
+
+La observaciones se concentran en un solo tipo (95%).
+
+#### GarageCond
+
+```{r}
+
+tabla <- table(rawTrain$GarageCond)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$GarageCond,main='GarageCond vs Price_Surface', ol='gray')
+
+```
+
+La observaciones se concentran en un solo tipo (96%).
+
+#### PavedDrive
+
+```{r}
+
+tabla <- table(rawTrain$PavedDrive)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$PavedDrive,main='PavedDrive vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad.
+
+#### WookDeckSF:
+
+```{r}
+
+summary(rawTrain$WoodDeckSF)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$WoodDeckSF[rawTrain$WoodDeckSF < 10000]~rawTrain$bucket_Price[rawTrain$WoodDeckSF < 10000],main='WoodDeckSF vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=WoodDeckSF, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=WoodDeckSF, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Existe variabilidad. A mayor superficie aumenta el precio.
+
+#### OpenPorchSF:
+
+```{r}
+
+summary(rawTrain$OpenPorchSF)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$OpenPorchSF[rawTrain$OpenPorchSF < 10000]~rawTrain$bucket_Price[rawTrain$OpenPorchSF < 10000],main='OpenPorchSF vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=OpenPorchSF, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=OpenPorchSF, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+Existe variabilidad. A mayor superficie aumenta el precio.
+
+#### EnclosedPorchSF:
+
+```{r}
+
+summary(rawTrain$EnclosedPorch)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$EnclosedPorch[rawTrain$EnclosedPorch < 10000]~rawTrain$bucket_Price[rawTrain$EnclosedPorch < 10000],main='EnclosedPorch vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=EnclosedPorch, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=EnclosedPorch, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+No existe variabilidad. Las observaciones se concentran en cero. A mayor superficie disminuye el precio. Convertir en una variable discreta (S/N).
+
+```{r}
+
+rawTrain$EnclosedPorch_Dis <- if_else(rawTrain$EnclosedPorch > 0, "Y", "N")
+
+#Distribucción de la nueva varible discreta por la variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$EnclosedPorch_Dis,main='EnclosedPorch_Dis vs Price_Surface', ol='gray')
+
+```
+
+Se observa variabilidad para la nueva variable discreta.
+
+#### 3snPorch:
+
+```{r}
+
+summary(rawTrain$`3SsnPorch`)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$`3SsnPorch`[rawTrain$`3SsnPorch` < 10000]~rawTrain$bucket_Price[rawTrain$`3SsnPorch` < 10000],main='`3SsnPorch` vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=`3SsnPorch`, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=`3SsnPorch`, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+No existe variabilidad. Se concentran en cero las observaciones. Convertir en una variable discreta (S/N).
+
+```{r}
+
+rawTrain$`3SsnPorch-Dis` <- if_else(rawTrain$`3SsnPorch` > 0, "Y", "N")
+
+#Distribucción de la nueva varible discreta por la variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$`3SsnPorch-Dis`,main='`3SsnPorch-Dis` vs Price_Surface', ol='gray')
+
+```
+
+Existe una variabilidad débil.
+
+#### ScreenPorch:
+
+```{r}
+
+summary(rawTrain$ScreenPorch)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$ScreenPorch[rawTrain$ScreenPorch < 10000]~rawTrain$bucket_Price[rawTrain$ScreenPorch < 10000],main='ScreenPorch vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=ScreenPorch, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=ScreenPorch, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+No existe variabilidad. Se concentran en cero las observaciones. Converir en una variable discreta (S/N).
+
+```{r}
+
+rawTrain$ScreenPorch_Dis <- if_else(rawTrain$ScreenPorch > 0, "Y", "N")
+
+#Distribucción de la nueva varible discreta por la variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$ScreenPorch_Dis,main='ScreenPorch_Dis vs Price_Surface', ol='gray')
+
+```
+
+No existe variabilidad.
+
+#### PoolArea:
+
+```{r}
+
+summary(rawTrain$PoolArea)
+
+```
+
+```{r}
+
+#Distribucción de la varible precio por superficie factorizada
+
+boxplot(rawTrain$PoolArea[rawTrain$PoolArea < 10000]~rawTrain$bucket_Price[rawTrain$PoolArea < 10000],main='PoolArea vs Price_Surface', ol='gray')
+
+```
+
+```{r}
+
+# Analisis de correlacción con las variables precio
+
+g1 <- ggplot(data = rawTrain, aes(x=PoolArea, y=SalePrice)) + geom_point() + geom_smooth(method=lm)
+g2 <- ggplot(data = rawTrain, aes(x=PoolArea, y=averagePrice_surface)) + geom_point() + geom_smooth(method=lm)
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+No existe variabilidad. Se concentran en cero las observaciones. Converir en una variable discreta (S/N).
+
+```{r}
+
+rawTrain$PoolArea_Dis <- if_else(rawTrain$PoolArea > 0, "Y", "N")
+
+#Distribucción de la nueva variable discreta por la variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$PoolArea_Dis,main='PoolArea_Dis vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad.
+
+#### PoolQC
+
+```{r}
+
+tabla <- table(rawTrain$PoolQC)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+El número de observaciones es muy bajo. Descartamos.
+
+#### Fence
+
+```{r}
+
+tabla <- table(rawTrain$Fence)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$Fence,main='Fence vs Price_Surface', ol='gray')
+
+```
+
+El número de observaciones es muy bajo y no existe variabilidad. Descartamos.
+
+#### MiscFeature
+
+```{r}
+
+tabla <- table(rawTrain$MiscFeature)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$MiscFeature,main='MiscFeature vs Price_Surface', ol='gray')
+
+```
+
+El número de observaciones es muy bajo y no existe variabilidad. Descartamos.
+
+#### MiscVal
+
+Descartamos por que el número de observaciones es muy bajo.
+
+#### MoSold & YearSold
+
+Analizado en excel no se observa tendencia en los precios en ese periodo. Aunque la gráfica si refleja que existe una acusada estacionalidad.
+
+```{r}
+
+#rawTrain$MoSold_YearSold <-  as.Date(paste(rawTrain$MoSold,rawTrain$YrSold, sep="-"),format="%m/%Y")
+
+#hist(rawTrain$MoSold_YearSold, breaks = 50)
+
+```
+
+#### SaleType
+
+```{r}
+
+tabla <- table(rawTrain$SaleType)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$SaleType,main='SaleType vs Price_Surface', ol='gray')
+
+```
+
+Existe variabilidad pero se deben agrupar niveles debido a la existencia de pocas observaciones.
+
+#### SaleCondition
+
+```{r}
+
+tabla <- table(rawTrain$SaleCondition)
+
+tabla
+
+```
+
+```{r}
+
+prop.table(tabla)
+
+```
+
+```{r}
+
+#Distribucción variable precio por superficie
+
+boxplot(rawTrain$averagePrice_surface~rawTrain$SaleCondition,main='SaleCondition vs Price_Surface', ol='gray')
+
+```
+
+
+#### Analisis de correlación entre las variables cuantitativas
+
+```{r}
+
+modelTrainCuant <- select(rawTrain, MasVnrArea, `1stFlrSF`, GrLivArea, GarageArea, WoodDeckSF, OpenPorchSF, averagePrice_surface)
+
+```
+
+
+```{r}
+
+pairs(modelTrainCuant)
+
+```
+
+```{r}
+
+library(GGally)
+
+ggpairs(modelTrainCuant, lower = list(continuous = "smooth"), 
+        diag = list(continuous = "bar"), axisLabels = "none")
+
+```
+
+#### Creamos una data set para el preprocesado de los datos (pendiente de decidir que hacemos)
+
+```{r}
+
+#Creamos un data set para el entrenamiento
+
+#write.csv(rawTrain, file = "preprocessTrain.csv", row.names = F)
+
+```
